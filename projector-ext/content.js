@@ -95,7 +95,7 @@
         btn(ui.projectorOpen ? "Focus projector" : "Open projector", "Open / focus the HY450 projector popup", () =>
           send({ type: "openProjector" }),
         ),
-        btn("Fullscreen on HDMI", "Move popup onto the projector display and go fullscreen (Extend mode required)", () =>
+        btn("Fill HDMI display", "Resize the projector window to fill the HDMI screen (use this instead of F11 on Linux)", () =>
           send({ type: "fullscreenProjector" }),
         ),
         btn("Refresh", "Pull GET /api/state now", () => send({ type: "refresh" })),

@@ -234,6 +234,21 @@
     return { left, top, width: w, height: h };
   }
 
+  /** Fill the display the window currently sits on. No F11 / Fullscreen API (flaky on Linux). */
+  function fillWindowDisplay(win) {
+    try {
+      // After you drag the window onto the HDMI output, win.screen is that output.
+      const left = win.screen.availLeft ?? win.screenX ?? 0;
+      const top = win.screen.availTop ?? win.screenY ?? 0;
+      const width = win.screen.availWidth || 1920;
+      const height = win.screen.availHeight || 1080;
+      win.moveTo(left, top);
+      win.resizeTo(width, height);
+    } catch (error) {
+      console.warn("[robo-projector] fillWindowDisplay failed", error);
+    }
+  }
+
   async function placeOnProjectorDisplay(win) {
     try {
       if (typeof win.getScreenDetails === "function") {
@@ -246,23 +261,31 @@
         if (target) {
           win.moveTo(target.availLeft, target.availTop);
           win.resizeTo(target.availWidth, target.availHeight);
+          return;
         }
+      }
+    } catch (error) {
+      console.warn("[robo-projector] getScreenDetails unavailable", error);
+    }
+    try {
+      // If the window is already on the projector, fill that screen.
+      // Otherwise park to the right of the console screen (common HDMI layout).
+      const onSecondary =
+        (win.screen?.availLeft ?? 0) !== (window.screen?.availLeft ?? 0) ||
+        (win.screen?.availTop ?? 0) !== (window.screen?.availTop ?? 0) ||
+        (win.screenX || 0) >= (window.screen?.availWidth || 0) - 40;
+      if (onSecondary) {
+        fillWindowDisplay(win);
       } else {
         const rect = projectorScreenRect();
         win.moveTo(rect.left, rect.top);
         win.resizeTo(rect.width, rect.height);
+        // Second pass: once Firefox assigns the window to that screen, fill it.
+        setTimeout(() => fillWindowDisplay(win), 50);
+        setTimeout(() => fillWindowDisplay(win), 250);
       }
     } catch (error) {
       console.warn("[robo-projector] could not move onto projector display", error);
-    }
-    try {
-      const el = win.document.documentElement;
-      if (win.document.fullscreenElement !== el && el.requestFullscreen) {
-        await el.requestFullscreen({ navigationUI: "hide" });
-      }
-    } catch {
-      // User gesture / permission — maximize is still enough.
-      try { win.moveTo(win.screenX, win.screenY); win.resizeTo(win.screen.availWidth, win.screen.availHeight); } catch { /* ignore */ }
     }
   }
 
@@ -272,7 +295,8 @@
       return state.projector;
     }
     const rect = projectorScreenRect();
-    const features = `popup,left=${rect.left},top=${rect.top},width=${rect.width},height=${rect.height}`;
+    // Avoid `popup` — Linux/Firefox often cannot keep F11 fullscreen on popup windows.
+    const features = `left=${rect.left},top=${rect.top},width=${rect.width},height=${rect.height}`;
     const win = window.open("", "ProjectorView", features);
     if (!win) {
       console.warn("[robo-projector] Popup blocked — allow popups for this origin, then Open Projector.");
@@ -309,12 +333,18 @@
       padding: 6px 8px; border: 1px solid #134e4a; pointer-events: none;
       display: none;
     }
+    #fillHint {
+      position: absolute; right: 8px; bottom: 8px; z-index: 6;
+      font: 12px/1.35 monospace; color: #9effff; background: rgba(0,0,0,.55);
+      padding: 6px 8px; border: 1px solid #134e4a; pointer-events: none;
+    }
   </style>
 </head>
 <body>
   <div id="stage">
     <div id="warp"><svg id="scene" xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div id="hud"></div>
+    <div id="fillHint">Drag this window onto the HDMI display, then double-click (or press F) to fill — skip F11</div>
   </div>
 </body>
 </html>`);
@@ -329,6 +359,17 @@
       bindHandleDrag(handle, i);
       doc.getElementById("stage").appendChild(handle);
     }
+
+    const fill = () => {
+      fillWindowDisplay(win);
+      const hint = win.document.getElementById("fillHint");
+      if (hint) hint.style.display = "none";
+      renderProjector();
+    };
+    win.document.getElementById("stage")?.addEventListener("dblclick", fill);
+    win.addEventListener("keydown", (event) => {
+      if (event.key === "f" || event.key === "F") fill();
+    });
 
     win.addEventListener("resize", () => renderProjector());
     win.addEventListener("beforeunload", () => {
@@ -779,7 +820,13 @@
         break;
       case "fullscreenProjector":
         ensureProjector();
-        if (state.projector && !state.projector.closed) void placeOnProjectorDisplay(state.projector);
+        if (state.projector && !state.projector.closed) {
+          // Prefer borderless-style fill via resize; do not call requestFullscreen (breaks on Linux).
+          fillWindowDisplay(state.projector);
+          void placeOnProjectorDisplay(state.projector);
+          const hint = state.projector.document.getElementById("fillHint");
+          if (hint) hint.style.display = "none";
+        }
         renderProjector();
         break;
       case "toggleCalibrate":
