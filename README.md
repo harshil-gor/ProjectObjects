@@ -10,12 +10,21 @@ Clone this repo on the TeleOp / Eval PC, then load the unpacked Chrome extension
 git clone https://github.com/harshil-gor/ProjectObjects.git
 ```
 
-1. Chrome → `chrome://extensions` → Developer mode → **Load unpacked**
-2. Select the `projector-ext` folder inside this repo
+### Firefox (typical on the station PC)
+
+1. `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…**
+2. Choose **`projector-ext/manifest.json`** (the file, not the folder)
 3. `Win + P` → **Extend** (not Duplicate)
-4. Open the station console (`http://127.0.0.1:8765/` or the URL printed by `se3labs-station console`)
-5. Floating panel → **Open projector** → **Fullscreen on HDMI** → calibrate 4 corners
+4. Open / refresh the station console
+5. Floating panel → **Open projector** → **Fullscreen on HDMI** → calibrate
+
+Temporary add-ons vanish after Firefox restarts — reload `manifest.json` again.
+
+### Chrome
+
+1. `chrome://extensions` → Developer mode → **Load unpacked** → select the `projector-ext` folder
+2. Then same Extend / Open projector / calibrate steps
 
 HY450 digital keystone must be **OFF**.
 
-See [`projector-ext/README.md`](projector-ext/README.md) for local smoke-test details.
+See [`projector-ext/README.md`](projector-ext/README.md) for details.

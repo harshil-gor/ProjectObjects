@@ -10,22 +10,25 @@ Unpacked Manifest V3 extension that overlays SE3 task layouts onto a Magcubic HY
 | `injected.js` | **MAIN** @ `document_start` | Wraps `EventSource` + `fetch`, owns projector popup + metre-space SVG + `matrix3d` warp |
 | `content.js` | isolated @ `document_idle` | Floating control bar on the console |
 
+## Load in Firefox (station PC)
+
+1. Open `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on…**
+3. Select this file (not the folder):
+   `projector-ext/manifest.json`
+4. Open / refresh the station console (`http://127.0.0.1:8765/…`)
+5. Allow popups for that site if Firefox asks
+6. Floating panel → **Open projector** → **Fullscreen on HDMI**
+
+Temporary add-ons are removed when Firefox restarts — load `manifest.json` again after a reboot.
+
 ## Load in Chrome
 
-Chrome 156+ ignores `--load-extension` from the command line unless enterprise
-flags are set. Use **Load unpacked** instead:
-
 1. Open `chrome://extensions`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked**
-4. Select this folder:
-   `C:\Users\harsh\OneDrive\Desktop\work\ProjectObjects\projector-ext`
-5. Open the station console:
-   - `http://127.0.0.1:8765/` (bridge), or
-   - `http://localhost:3000/` (`next dev` rewrite)
-6. Allow the popup if Chrome blocks it the first time
-7. On the floating **SE3 Robo Projector** panel, click **Open projector**
-8. Drag that window onto the HY450 display (Windows: Win+Shift+Arrow, or display settings)
+2. Enable **Developer mode**
+3. Click **Load unpacked** and select the whole `projector-ext` folder
+4. Open / refresh the station console
+5. Floating panel → **Open projector** → **Fullscreen on HDMI**
 
 ## Local laptop smoke test (no robot)
 
