@@ -374,7 +374,18 @@
     win.addEventListener("resize", () => renderProjector());
     win.addEventListener("beforeunload", () => {
       if (state.projector === win) state.projector = null;
+      publishUi();
     });
+    // Some browsers close popups without a reliable beforeunload; poll briefly.
+    const closeWatch = win.setInterval(() => {
+      if (!state.projector || state.projector.closed) {
+        win.clearInterval(closeWatch);
+        if (state.projector === win || (state.projector && state.projector.closed)) {
+          state.projector = null;
+          publishUi();
+        }
+      }
+    }, 1000);
     void placeOnProjectorDisplay(win);
     renderProjector();
     return win;
@@ -815,7 +826,12 @@
     const cmd = event.detail || {};
     switch (cmd.type) {
       case "openProjector":
+        // If the operator closed the projector window, recreate it; otherwise focus/fill.
+        if (state.projector && state.projector.closed) state.projector = null;
         ensureProjector();
+        if (state.projector && !state.projector.closed) {
+          try { state.projector.focus(); } catch { /* ignore */ }
+        }
         renderProjector();
         break;
       case "fullscreenProjector":

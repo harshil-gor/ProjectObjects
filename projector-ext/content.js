@@ -1,12 +1,18 @@
 /**
  * Isolated-world floating control bar for the SE3 Robo Projector.
- * Talks to injected.js (MAIN) via window CustomEvents.
+ * Styled to match the SE3 operator console (light mono panels / outlined buttons).
+ * Talks to injected.js via window CustomEvents.
  */
 (() => {
   if (window.__ROBO_PROJECTOR_UI__) return;
   window.__ROBO_PROJECTOR_UI__ = true;
 
-  const CORNER_LABELS = ["BL 0,0", "BR 1.2,0", "FR 1.2,0.65", "FL 0,0.65"];
+  const CORNER_LABELS = [
+    { short: "1 BL", full: "Back-Left 0,0" },
+    { short: "2 BR", full: "Back-Right 1.2,0" },
+    { short: "3 FR", full: "Front-Right 1.2,0.65" },
+    { short: "4 FL", full: "Front-Left 0,0.65" },
+  ];
 
   let ui = {
     connected: false,
@@ -32,6 +38,7 @@
   let selectedCorner = 0;
   let root = null;
   let collapsed = false;
+  let showAdvanced = false;
 
   function send(detail) {
     window.dispatchEvent(new CustomEvent("robo-projector-cmd", { detail }));
@@ -42,8 +49,11 @@
     for (const [key, value] of Object.entries(attrs)) {
       if (key === "style" && typeof value === "object") Object.assign(node.style, value);
       else if (key === "className") node.className = value;
-      else if (key.startsWith("on") && typeof value === "function") node.addEventListener(key.slice(2).toLowerCase(), value);
-      else if (value !== false && value != null) node.setAttribute(key, value === true ? "" : String(value));
+      else if (key.startsWith("on") && typeof value === "function") {
+        node.addEventListener(key.slice(2).toLowerCase(), value);
+      } else if (value !== false && value != null) {
+        node.setAttribute(key, value === true ? "" : String(value));
+      }
     }
     for (const child of [].concat(children)) {
       if (child == null || child === false) continue;
@@ -52,26 +62,42 @@
     return node;
   }
 
-  function btn(label, title, onClick, active = false) {
-    return el(
-      "button",
-      {
-        type: "button",
-        title,
-        className: active ? "rp-btn rp-on" : "rp-btn",
-        onClick,
-      },
-      label,
-    );
+  function btn(label, title, onClick, { tone = "outline", active = false, wide = false } = {}) {
+    const className = [
+      "rp-btn",
+      tone === "fill" ? "rp-fill" : "",
+      tone === "green" ? "rp-green" : "",
+      active ? "rp-on" : "",
+      wide ? "rp-wide" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return el("button", { type: "button", title, className, onClick }, label);
   }
 
-  function statusText() {
-    if (!ui.connected) return "waiting for MAIN hooks…";
-    if (ui.manualBlank) return "manual blank";
-    if (ui.calibrating) return "calibrating 4 corners";
-    if (ui.show) return `scene layout · ${ui.objectCount} objects`;
-    if (ui.recordingBlank) return `blank · phase=${ui.phase || "—"} prompt=${ui.prompt || "—"}`;
-    return "idle";
+  function kbd(text) {
+    return el("span", { className: "rp-kbd" }, text);
+  }
+
+  function label(text) {
+    return el("p", { className: "rp-label" }, text);
+  }
+
+  function statusLine() {
+    if (!ui.connected) return { tone: "warn", text: "Connecting to page hooks…" };
+    if (!ui.projectorOpen) {
+      return { tone: "warn", text: "Projector window closed — press Open projector below" };
+    }
+    if (ui.manualBlank) return { tone: "warn", text: "Manual blank on · projector forced to black" };
+    if (ui.calibrating) return { tone: "ok", text: "Calibrating · drag the 4 pins on the projector" };
+    if (ui.show) return { tone: "ok", text: `Showing layout · ${ui.objectCount} object${ui.objectCount === 1 ? "" : "s"}` };
+    if (ui.recordingBlank) {
+      return {
+        tone: "muted",
+        text: `Blank · waiting for scene_ready (phase ${ui.phase || "—"}, prompt ${ui.prompt || "—"})`,
+      };
+    }
+    return { tone: "muted", text: "Idle · projector open" };
   }
 
   function rebuild() {
@@ -80,123 +106,166 @@
     if (!body) return;
     body.replaceChildren();
 
+    const status = statusLine();
+    body.appendChild(label("Projector state"));
     body.appendChild(
-      el("div", { className: "rp-status" }, [
-        el("div", {}, statusText()),
+      el("div", { className: `rp-status rp-${status.tone}` }, [
+        el("div", { className: "rp-status-main" }, status.text),
         el("div", { className: "rp-muted" }, [
-          `layout ${ui.layoutId ? ui.layoutId.slice(0, 8) : "none"}`,
-          ui.projectorOpen ? " · projector open" : " · projector closed",
+          ui.layoutId ? `layout ${ui.layoutId.slice(0, 8)}` : "no layout yet",
+          " · ",
+          ui.projectorOpen ? "window open" : "window closed",
         ]),
       ]),
     );
 
+    body.appendChild(label("Window"));
+    // Always keep Open projector as the primary recovery action.
     body.appendChild(
-      el("div", { className: "rp-row" }, [
-        btn(ui.projectorOpen ? "Focus projector" : "Open projector", "Open / focus the HY450 projector popup", () =>
-          send({ type: "openProjector" }),
+      el("div", { className: "rp-grid" }, [
+        btn(
+          ui.projectorOpen ? "Reopen / focus projector" : "Open projector",
+          "Open the black projector window again if you closed it, or bring it to the front",
+          () => send({ type: "openProjector" }),
+          { tone: "fill", wide: true },
         ),
-        btn("Fill HDMI display", "Resize the projector window to fill the HDMI screen (use this instead of F11 on Linux)", () =>
+      ]),
+    );
+    body.appendChild(
+      el("div", { className: "rp-grid-2" }, [
+        btn("Fill HDMI display", "Resize the projector window to fill the HDMI screen (Linux: use this instead of F11)", () =>
           send({ type: "fullscreenProjector" }),
         ),
-        btn("Refresh", "Pull GET /api/state now", () => send({ type: "refresh" })),
+        btn("Refresh state", "Pull the latest /api/state", () => send({ type: "refresh" })),
       ]),
     );
+    if (!ui.projectorOpen) {
+      body.appendChild(
+        el("p", { className: "rp-help" }, [
+          "If you closed the projector screen, click ",
+          el("strong", {}, "Open projector"),
+          " — that recreates it. Drag it onto the HDMI display, then Fill HDMI display.",
+        ]),
+      );
+    }
 
+    body.appendChild(label("Scene"));
     body.appendChild(
-      el("div", { className: "rp-row" }, [
+      el("div", { className: "rp-grid-2" }, [
         btn(
-          ui.calibrating ? "Calibrate: ON" : "Calibrate 4 corners",
-          "Show calibration grid and drag pins on the projector",
+          ui.calibrating ? "Calibrate · ON" : "Calibrate 4 corners",
+          "Show the calibration grid on the projector even without a task",
           () => send({ type: "toggleCalibrate" }),
-          ui.calibrating,
+          { tone: ui.calibrating ? "green" : "outline", active: ui.calibrating },
         ),
         btn(
-          ui.manualBlank ? "Manual blank: ON" : "Manual blank",
-          "Force projector to #000 regardless of scene state",
+          ui.manualBlank ? "Manual blank · ON" : "Manual blank",
+          "Force the projector to pure black",
           () => send({ type: "toggleManualBlank" }),
-          ui.manualBlank,
+          { active: ui.manualBlank },
         ),
+        btn(`Flip X · ${ui.flipX ? "ON" : "OFF"}`, "Mirror table +x (right)", () => send({ type: "toggleFlipX" }), {
+          active: ui.flipX,
+        }),
+        btn(`Flip Y · ${ui.flipY ? "ON" : "OFF"}`, "Mirror table +y (toward arms)", () => send({ type: "toggleFlipY" }), {
+          active: ui.flipY,
+        }),
       ]),
     );
 
     body.appendChild(
-      el("div", { className: "rp-row" }, [
-        btn(`Flip X: ${ui.flipX ? "ON" : "OFF"}`, "Mirror table +x (right)", () => send({ type: "toggleFlipX" }), ui.flipX),
-        btn(`Flip Y: ${ui.flipY ? "ON" : "OFF"}`, "Mirror table +y (toward arms)", () => send({ type: "toggleFlipY" }), ui.flipY),
-      ]),
-    );
-
-    const cornerRow = el("div", { className: "rp-row rp-wrap" });
-    CORNER_LABELS.forEach((label, index) => {
-      cornerRow.appendChild(
-        btn(
-          `${index + 1} ${label}`,
-          `Select corner ${index + 1} for fine-tune`,
-          () => {
-            selectedCorner = index;
+      el(
+        "button",
+        {
+          type: "button",
+          className: "rp-link",
+          onClick: () => {
+            showAdvanced = !showAdvanced;
             rebuild();
           },
-          selectedCorner === index,
+        },
+        showAdvanced ? "Hide corner fine-tune ▴" : "Show corner fine-tune ▾",
+      ),
+    );
+
+    if (showAdvanced || ui.calibrating) {
+      body.appendChild(label("Corner pins"));
+      body.appendChild(
+        el(
+          "div",
+          { className: "rp-grid-4" },
+          CORNER_LABELS.map((corner, index) =>
+            btn(
+              corner.short,
+              corner.full,
+              () => {
+                selectedCorner = index;
+                rebuild();
+              },
+              { active: selectedCorner === index },
+            ),
+          ),
         ),
       );
-    });
-    body.appendChild(cornerRow);
 
-    const c = ui.corners[selectedCorner] || { x: 0, y: 0 };
-    body.appendChild(
-      el("div", { className: "rp-fine" }, [
-        el("div", { className: "rp-muted" }, [
-          `Corner ${selectedCorner + 1} · x=${c.x.toFixed(3)} y=${c.y.toFixed(3)} (window fractions)`,
-        ]),
-        el("div", { className: "rp-row" }, [
-          btn("←", "Nudge left", () => send({ type: "nudgeCorner", index: selectedCorner, dx: -1, dy: 0 })),
-          btn("→", "Nudge right", () => send({ type: "nudgeCorner", index: selectedCorner, dx: 1, dy: 0 })),
-          btn("↑", "Nudge up", () => send({ type: "nudgeCorner", index: selectedCorner, dx: 0, dy: -1 })),
-          btn("↓", "Nudge down", () => send({ type: "nudgeCorner", index: selectedCorner, dx: 0, dy: 1 })),
-          btn("Reset pins", "Restore default corner pins", () => send({ type: "resetCorners" })),
-        ]),
-        el("div", { className: "rp-row" }, [
-          el("label", { className: "rp-field" }, [
-            "x ",
-            el("input", {
-              type: "number",
-              min: "0",
-              max: "1",
-              step: "0.001",
-              value: String(c.x.toFixed(3)),
-              onChange: (event) =>
-                send({
-                  type: "setCorner",
-                  index: selectedCorner,
-                  x: Number(event.target.value),
-                  y: c.y,
-                }),
-            }),
+      const c = ui.corners[selectedCorner] || { x: 0, y: 0 };
+      body.appendChild(
+        el("div", { className: "rp-fine" }, [
+          el("div", { className: "rp-muted" }, [
+            `${CORNER_LABELS[selectedCorner].full} · x=${c.x.toFixed(3)} y=${c.y.toFixed(3)}`,
           ]),
-          el("label", { className: "rp-field" }, [
-            "y ",
-            el("input", {
-              type: "number",
-              min: "0",
-              max: "1",
-              step: "0.001",
-              value: String(c.y.toFixed(3)),
-              onChange: (event) =>
-                send({
-                  type: "setCorner",
-                  index: selectedCorner,
-                  x: c.x,
-                  y: Number(event.target.value),
-                }),
-            }),
+          el("div", { className: "rp-grid-5" }, [
+            btn("←", "Nudge left", () => send({ type: "nudgeCorner", index: selectedCorner, dx: -1, dy: 0 })),
+            btn("→", "Nudge right", () => send({ type: "nudgeCorner", index: selectedCorner, dx: 1, dy: 0 })),
+            btn("↑", "Nudge up", () => send({ type: "nudgeCorner", index: selectedCorner, dx: 0, dy: -1 })),
+            btn("↓", "Nudge down", () => send({ type: "nudgeCorner", index: selectedCorner, dx: 0, dy: 1 })),
+            btn("Reset", "Restore default corner pins", () => send({ type: "resetCorners" })),
+          ]),
+          el("div", { className: "rp-grid-2" }, [
+            el("label", { className: "rp-field" }, [
+              "x",
+              el("input", {
+                type: "number",
+                min: "0",
+                max: "1",
+                step: "0.001",
+                value: String(c.x.toFixed(3)),
+                onChange: (event) =>
+                  send({
+                    type: "setCorner",
+                    index: selectedCorner,
+                    x: Number(event.target.value),
+                    y: c.y,
+                  }),
+              }),
+            ]),
+            el("label", { className: "rp-field" }, [
+              "y",
+              el("input", {
+                type: "number",
+                min: "0",
+                max: "1",
+                step: "0.001",
+                value: String(c.y.toFixed(3)),
+                onChange: (event) =>
+                  send({
+                    type: "setCorner",
+                    index: selectedCorner,
+                    x: c.x,
+                    y: Number(event.target.value),
+                  }),
+              }),
+            ]),
           ]),
         ]),
-      ]),
-    );
+      );
+    }
 
     body.appendChild(
       el("p", { className: "rp-help" }, [
-        "Turn OFF HY450 digital keystone. Drag pins on the projector (or fine-tune here) so metre-space footprints land on the physical table. Scene targets show only during scene_ready; Start episode blanks for 65ms before the command reaches the bridge.",
+        "HY450 digital keystone OFF. Scene footprints appear only during scene_ready. Closed the projector window? Use ",
+        el("strong", {}, "Open projector"),
+        " anytime.",
       ]),
     );
   }
@@ -208,58 +277,95 @@
       `
 #robo-projector-panel {
   position: fixed; right: 12px; bottom: 12px; z-index: 2147483646;
-  width: 340px; max-width: calc(100vw - 24px);
-  color: #e7eef0; background: rgba(12, 18, 20, 0.94);
-  border: 1px solid #2a4a4e; border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0,0,0,.45);
-  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  backdrop-filter: blur(8px);
+  width: 360px; max-width: calc(100vw - 24px);
+  color: #171717; background: #f5f5f3;
+  border: 1px solid #d4d4d4;
+  box-shadow: 0 10px 28px rgba(0,0,0,.18);
+  font: 12.5px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 #robo-projector-panel * { box-sizing: border-box; }
 #robo-projector-panel .rp-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 8px 10px; border-bottom: 1px solid #24383b; cursor: move; user-select: none;
+  padding: 8px 10px; border-bottom: 1px solid #d4d4d4; cursor: move; user-select: none;
+  background: #efefed;
 }
-#robo-projector-panel .rp-title { font-weight: 700; letter-spacing: 0.04em; color: #9effff; }
-#robo-projector-panel .rp-body { padding: 8px 10px 10px; display: grid; gap: 8px; }
+#robo-projector-panel .rp-title {
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: 11px; color: #525252;
+}
+#robo-projector-panel .rp-body { padding: 10px; display: grid; gap: 8px; }
 #robo-projector-panel.rp-collapsed .rp-body { display: none; }
-#robo-projector-panel .rp-row { display: flex; flex-wrap: wrap; gap: 6px; }
-#robo-projector-panel .rp-wrap { gap: 4px; }
-#robo-projector-panel .rp-btn {
-  appearance: none; border: 1px solid #3a6066; background: #132226; color: #dffcff;
-  border-radius: 6px; padding: 5px 8px; cursor: pointer; font: inherit;
+#robo-projector-panel .rp-label {
+  margin: 2px 0 0; font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #737373;
 }
-#robo-projector-panel .rp-btn:hover { background: #1a3238; }
-#robo-projector-panel .rp-btn.rp-on { background: #0d7377; border-color: #14ffec; color: #fff; }
-#robo-projector-panel .rp-status { display: grid; gap: 2px; }
-#robo-projector-panel .rp-muted { color: #8aa3a8; font-size: 11px; }
-#robo-projector-panel .rp-help { margin: 0; color: #8aa3a8; font-size: 11px; }
-#robo-projector-panel .rp-field { display: inline-flex; align-items: center; gap: 4px; color: #b7cbd0; }
+#robo-projector-panel .rp-status {
+  border: 1px solid #d4d4d4; background: #fff; padding: 8px;
+  display: grid; gap: 2px;
+}
+#robo-projector-panel .rp-status.rp-ok { border-top: 3px solid #3f6b3b; }
+#robo-projector-panel .rp-status.rp-warn { border-top: 3px solid #8c1515; }
+#robo-projector-panel .rp-status.rp-muted { border-top: 3px solid #d8d8d4; }
+#robo-projector-panel .rp-status-main { color: #171717; }
+#robo-projector-panel .rp-status.rp-warn .rp-status-main { color: #8c1515; font-weight: 600; }
+#robo-projector-panel .rp-muted { color: #737373; font-size: 11px; }
+#robo-projector-panel .rp-grid { display: grid; gap: 6px; }
+#robo-projector-panel .rp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#robo-projector-panel .rp-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+#robo-projector-panel .rp-grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+#robo-projector-panel .rp-btn {
+  appearance: none; cursor: pointer; border: 1px solid #171717;
+  background: #f5f5f3; color: #171717;
+  padding: 7px 8px; text-align: left; font: inherit;
+}
+#robo-projector-panel .rp-btn:hover { background: #efefed; }
+#robo-projector-panel .rp-btn.rp-fill {
+  background: #171717; color: #efefed; font-weight: 600;
+}
+#robo-projector-panel .rp-btn.rp-fill:hover { background: #262626; }
+#robo-projector-panel .rp-btn.rp-green {
+  background: #3f6b3b; border-color: #3f6b3b; color: #efefed; font-weight: 600;
+}
+#robo-projector-panel .rp-btn.rp-on:not(.rp-fill):not(.rp-green) {
+  background: #e5e5e5; box-shadow: inset 0 0 0 1px #171717;
+}
+#robo-projector-panel .rp-btn.rp-wide { width: 100%; }
+#robo-projector-panel .rp-link {
+  appearance: none; border: 0; background: transparent; color: #525252;
+  text-align: left; padding: 0; cursor: pointer; font: inherit;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+#robo-projector-panel .rp-help { margin: 0; color: #737373; font-size: 11px; }
+#robo-projector-panel .rp-field {
+  display: flex; align-items: center; gap: 6px; color: #525252;
+  border: 1px solid #d4d4d4; background: #fff; padding: 4px 6px;
+}
 #robo-projector-panel input[type="number"] {
-  width: 72px; background: #0b1518; border: 1px solid #31484c; color: #e7eef0;
-  border-radius: 4px; padding: 3px 4px; font: inherit;
+  width: 100%; border: 0; background: transparent; color: #171717; font: inherit;
 }
 #robo-projector-panel .rp-toggle {
-  border: 0; background: transparent; color: #9effff; cursor: pointer; font: inherit;
+  border: 1px solid #171717; background: #f5f5f3; color: #171717;
+  cursor: pointer; font: inherit; padding: 2px 8px;
 }
+#robo-projector-panel .rp-fine { display: grid; gap: 6px; }
 `,
     ]);
 
     root = el("div", { id: "robo-projector-panel" }, [
       el("div", { className: "rp-head" }, [
-        el("div", { className: "rp-title" }, "SE3 Robo Projector"),
+        el("div", { className: "rp-title" }, "Table projector"),
         el(
           "button",
           {
             type: "button",
             className: "rp-toggle",
-            title: "Collapse",
+            title: collapsed ? "Expand" : "Collapse",
             onClick: () => {
               collapsed = !collapsed;
               root.classList.toggle("rp-collapsed", collapsed);
             },
           },
-          "—",
+          collapsed ? "+" : "—",
         ),
       ]),
       el("div", { className: "rp-body" }),
