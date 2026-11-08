@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "SE3 Robo Projector",
+  "version": "1.0.0",
+  "description": "External Magcubic HY450 table projector overlay for the SE3 station console (Option A).",
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1:8765/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["injected.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://127.0.0.1:8765/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
